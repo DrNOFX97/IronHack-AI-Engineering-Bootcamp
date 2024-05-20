@@ -1,4 +1,4 @@
-# IronHack-AI-Engineering Bootcamp
+# IronHack AI Engineering Bootcamp
 IronHack AI Engineering online course
 
 Here is where I store my training files.
