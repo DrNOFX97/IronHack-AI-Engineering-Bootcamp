@@ -9,14 +9,14 @@ Original file is located at
 # Install main dependencies
 """
 
-#!pip install -qU vosk yt-dlp tqdm datasets openai pinecone pinecone-client tiktoken
-#!pip install -qU pyarrow==11.0.0
-#!pip install -qU langchain \
-#      langchainhub \
-#      langchain-openai \
-#      langchain_community \
-#      langchain-pinecone \
-#      langchain_anthropic
+!pip install -qU vosk yt-dlp tqdm datasets openai pinecone pinecone-client tiktoken
+!pip install -qU pyarrow==11.0.0 flask
+!pip install -qU langchain \
+      langchainhub \
+      langchain-openai \
+      langchain_community \
+      langchain-pinecone \
+      langchain_anthropic
 
 # Uncomment lines below on CoLab
 
@@ -679,8 +679,6 @@ texts = retriever.get_relevant_documents(query=question)
 print("Number of retrieved texts:", len(texts))
 
 """# Setup Flask for Web Interface"""
-
-#!pip install -qU flask
 
 from flask import Flask, request, jsonify, render_template
 from langchain.agents import initialize_agent
