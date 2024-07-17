@@ -9,26 +9,35 @@ Original file is located at
 # Install main dependencies
 """
 
-!pip install -qU vosk yt-dlp tqdm datasets openai pinecone pinecone-client tiktoken
-!pip install -qU pyarrow==11.0.0 flask
-!pip install -qU langchain \
-      langchainhub \
-      langchain-openai \
-      langchain_community \
-      langchain-pinecone \
-      langchain_anthropic
+import subprocess
+import sys
 
-# Uncomment lines below on CoLab
+# Function to install packages using pip
+def install_packages(packages):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", *packages])
 
-#!wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
-#!unzip vosk-model-small-en-us-0.15.zip
-#!mv vosk-model-small-en-us-0.15 model
-#!rm vosk-model-small-en-us-0.15.zip
-#!rm -rf audio.wav
-#!rm -rf transcription.txt
+# List of packages to install
+packages = [
+    'vosk', 'yt-dlp', 'tqdm', 'datasets', 'openai', 'pinecone-client', 'tiktoken',
+    'pyarrow==11.0.0', 'flask',
+    'langchain', 'langchainhub', 'langchain-openai', 'langchain_community',
+    'langchain-pinecone', 'langchain_anthropic'
+]
 
-#!apt-get update
-#!apt-get install -y ffmpeg
+# Install the packages
+install_packages(packages)
+
+# If running on Colab, you can uncomment and run these lines to download and set up the model
+subprocess.check_call(["wget", "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"])
+subprocess.check_call(["unzip", "vosk-model-small-en-us-0.15.zip"])
+subprocess.check_call(["mv", "vosk-model-small-en-us-0.15", "model"])
+subprocess.check_call(["rm", "vosk-model-small-en-us-0.15.zip"])
+subprocess.check_call(["rm", "-rf", "audio.wav"])
+subprocess.check_call(["rm", "-rf", "transcription.txt"])
+subprocess.check_call(["apt-get", "update"])
+subprocess.check_call(["apt-get", "install", "-y", "ffmpeg"])
+
+# Now your dependencies are installed, and you can continue with your Streamlit app code
 
 """# Install main packages and modules"""
 
