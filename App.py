@@ -26,30 +26,11 @@ from uuid import uuid4
 # Load environment variables
 load_dotenv()
 
-# Function to install packages using pip
-def install_packages(packages):
-    subprocess.check_call([sys.executable, "-m", "pip", "install", *packages])
-
-# List of packages to install
-packages = [
-    'vosk', 'yt-dlp', 'tqdm', 'datasets', 'openai', 'pinecone-client', 'tiktoken',
-    'pyarrow==11.0.0', 'flask', 'streamlit', 'python-dotenv'
-]
-
-# Install the packages
-install_packages(packages)
-
-# Download Vosk model if not present
-if not os.path.exists("model"):
-    subprocess.check_call(["wget", "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"])
-    subprocess.check_call(["unzip", "vosk-model-small-en-us-0.15.zip"])
-    subprocess.check_call(["mv", "vosk-model-small-en-us-0.15", "model"])
-    subprocess.check_call(["rm", "vosk-model-small-en-us-0.15.zip"])
-
 # Function to convert audio format
+@st.cache_data
 def convert_audio(input_file, output_file):
     command = [
-        '/usr/local/bin/ffmpeg',  # Explicitly use the full path to ffmpeg
+        'ffmpeg',  # Assume ffmpeg is in PATH
         '-i', input_file,
         '-acodec', 'pcm_s16le',
         '-ac', '1',
@@ -60,13 +41,14 @@ def convert_audio(input_file, output_file):
         subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         return True
     except subprocess.CalledProcessError as e:
-        print(f"Error converting audio: {e}")
+        st.error(f"Error converting audio: {e}")
         return False
 
 # Function to transcribe audio
+@st.cache_data
 def transcribe_audio(audio_file):
     if not os.path.exists("model"):
-        print("Speech recognition model not found. Please make sure you've downloaded it.")
+        st.error("Speech recognition model not found. Please make sure you've downloaded it.")
         return None
 
     model = Model("model")
@@ -75,7 +57,7 @@ def transcribe_audio(audio_file):
     try:
         wf = wave.open(audio_file, "rb")
         if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getcomptype() != "NONE":
-            print("Converting audio to the correct format...")
+            st.info("Converting audio to the correct format...")
             converted_file = "converted_audio.wav"
             if not convert_audio(audio_file, converted_file):
                 return None
@@ -83,24 +65,25 @@ def transcribe_audio(audio_file):
 
         results = []
         total_frames = wf.getnframes()
-        with tqdm(total=total_frames, desc="Transcribing") as pbar:
-            while True:
-                data = wf.readframes(4000)
-                if len(data) == 0:
-                    break
-                if rec.AcceptWaveform(data):
-                    part_result = json.loads(rec.Result())
-                    results.append(part_result['text'])
-                pbar.update(4000)
+        progress_bar = st.progress(0)
+        for i in range(0, total_frames, 4000):
+            data = wf.readframes(4000)
+            if len(data) == 0:
+                break
+            if rec.AcceptWaveform(data):
+                part_result = json.loads(rec.Result())
+                results.append(part_result['text'])
+            progress_bar.progress(min(i / total_frames, 1.0))
 
         part_result = json.loads(rec.FinalResult())
         results.append(part_result['text'])
         return " ".join(results)
     except Exception as e:
-        print(f"An error occurred during transcription: {str(e)}")
+        st.error(f"An error occurred during transcription: {str(e)}")
         return None
 
 # Function to download video
+@st.cache_data
 def download_video(url):
     ydl_opts = {
         'format': 'bestaudio/best',
@@ -110,7 +93,6 @@ def download_video(url):
             'preferredquality': '192',
         }],
         'outtmpl': 'audio.%(ext)s',
-        'ffmpeg_location': '/usr/local/bin'  # Explicitly set the ffmpeg location
     }
 
     try:
@@ -118,7 +100,7 @@ def download_video(url):
             ydl.download([url])
         return 'audio.wav'
     except Exception as e:
-        print(f"An error occurred during download: {str(e)}")
+        st.error(f"An error occurred during download: {str(e)}")
         return None
 
 # Function to check valid YouTube URL
@@ -127,6 +109,7 @@ def is_valid_youtube_url(url):
     return re.match(pattern, url) is not None
 
 # Function to initialize Pinecone Vector Store
+@st.cache_resource
 def initialize_vectorstore():
     pinecone_api_key = os.getenv('PINECONE_API_KEY')
     openai_api_key = os.getenv('OPENAI_API_KEY')
@@ -162,34 +145,30 @@ def process_video():
     video_url = st.text_input("Enter the YouTube video URL:")
     if st.button("Transcribe"):
         if is_valid_youtube_url(video_url):
-            st.write("Downloading video...")
-            audio_file = download_video(video_url)
+            with st.spinner("Downloading video..."):
+                audio_file = download_video(video_url)
 
             if audio_file and os.path.exists(audio_file):
-                st.write("Transcribing audio...")
-                transcription = transcribe_audio(audio_file)
+                with st.spinner("Transcribing audio..."):
+                    transcription = transcribe_audio(audio_file)
 
                 if transcription:
-                    st.write("\nTranscription:")
+                    st.subheader("Transcription:")
                     st.write(transcription)
 
                     with open('transcription.txt', 'w') as f:
                         f.write(transcription)
 
-                    st.write("Transcription saved to 'transcription.txt'.")
+                    st.success("Transcription saved to 'transcription.txt'.")
                 else:
-                    st.write("Transcription failed. Please check the error messages above.")
+                    st.error("Transcription failed. Please check the error messages above.")
             else:
-                st.write("Failed to download the video. Please check the URL and try again.")
+                st.error("Failed to download the video. Please check the URL and try again.")
         else:
-            st.write("Invalid YouTube URL. Please enter a valid URL.")
+            st.error("Invalid YouTube URL. Please enter a valid URL.")
 
 # Function to load transcription into database
 def load_transcription_to_database(transcription_text):
-    transcription_file = 'transcription.txt'
-    with open(transcription_file, 'r') as file:
-        transcription_text = file.read()
-
     conn = sqlite3.connect('transcriptions.db')
     cursor = conn.cursor()
 
@@ -210,9 +189,10 @@ def load_transcription_to_database(transcription_text):
     conn.commit()
     conn.close()
 
-    st.write("Data has been successfully loaded into the database.")
+    st.success("Data has been successfully loaded into the database.")
 
 # Function to process user query and retrieve response
+@st.cache_data
 def process_query(query):
     vectorstore = initialize_vectorstore()[0]
     retriever = RetrievalQA.from_chain_type(
@@ -235,8 +215,10 @@ def main():
     elif user_choice == "Query Agent":
         query = st.text_input("Ask a question:")
         if st.button("Ask"):
-            response = process_query(query)
-            st.write("Agent Response:", response)
+            with st.spinner("Processing query..."):
+                response = process_query(query)
+            st.subheader("Agent Response:")
+            st.write(response)
 
 if __name__ == '__main__':
     main()
