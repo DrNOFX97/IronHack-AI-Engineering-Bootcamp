@@ -725,6 +725,13 @@ def ask():
 if __name__ == '__main__':
     app.run()  # Change 5000 to your desired port number
 
+import streamlit as st
+
+# Your Streamlit app title
+st.title('Conversational Agent')
+
+# HTML and CSS code as a string
+html_code = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -805,3 +812,7 @@ if __name__ == '__main__':
     </script>
 </body>
 </html>
+"""
+
+# Render the HTML and CSS in the Streamlit app
+st.markdown(html_code, unsafe_allow_html=True)
