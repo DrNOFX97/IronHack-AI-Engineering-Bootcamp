@@ -25,6 +25,37 @@ from uuid import uuid4
 
 # Load environment variables
 load_dotenv()
+import os
+
+# List of required packages
+requirements = [
+    "streamlit",
+    "yt-dlp",
+    "tqdm",
+    "vosk",
+    "python-dotenv",
+    "langchain",
+    "openai",
+    "pinecone-client",
+    "tiktoken",
+    "pyarrow==11.0.0",
+    "langchain-openai"
+]
+
+# Create the requirements.txt file
+with open("requirements.txt", "w") as file:
+    for requirement in requirements:
+        file.write(f"{requirement}\n")
+
+print("requirements.txt file has been created successfully.")
+
+# Optionally, display the contents of the file
+print("\nContents of requirements.txt:")
+with open("requirements.txt", "r") as file:
+    print(file.read())
+
+# Print the file path
+print(f"\nFile created at: {os.path.abspath('requirements.txt')}")
 
 # Function to convert audio format
 @st.cache_data
