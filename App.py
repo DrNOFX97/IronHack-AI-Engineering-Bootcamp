@@ -1,61 +1,27 @@
 import streamlit as st
 import subprocess
-import sys
 import os
 import re
 import json
 import time
 import wave
 import sqlite3
-import yt_dlp
-from tqdm.auto import tqdm
-from vosk import Model, KaldiRecognizer
-from dotenv import load_dotenv
-from langchain.chains import RetrievalQA
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.chains.conversation.memory import ConversationBufferWindowMemory
-from langchain.output_parsers import ListOutputParser
-from langchain.chains import LLMChain
-from langchain.agents import Tool, initialize_agent
-from langchain.retrievers.multi_query import MultiQueryRetriever
-from langchain.prompts import PromptTemplate
-import pinecone
-from uuid import uuid4
+
+# Try to import required packages, if not installed, provide instructions
+try:
+    import yt_dlp
+    from tqdm.auto import tqdm
+    from vosk import Model, KaldiRecognizer
+    from dotenv import load_dotenv
+    from langchain.chains import RetrievalQA
+    from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+    import pinecone
+except ImportError as e:
+    st.error(f"Required package is not installed: {str(e)}. Please install it using: pip install {str(e).split()[-1]}")
+    st.stop()
 
 # Load environment variables
 load_dotenv()
-import os
-
-# List of required packages
-requirements = [
-    "streamlit",
-    "yt-dlp",
-    "tqdm",
-    "vosk",
-    "python-dotenv",
-    "langchain",
-    "openai",
-    "pinecone-client",
-    "tiktoken",
-    "pyarrow==11.0.0",
-    "langchain-openai"
-]
-
-# Create the requirements.txt file
-with open("requirements.txt", "w") as file:
-    for requirement in requirements:
-        file.write(f"{requirement}\n")
-
-print("requirements.txt file has been created successfully.")
-
-# Optionally, display the contents of the file
-print("\nContents of requirements.txt:")
-with open("requirements.txt", "r") as file:
-    print(file.read())
-
-# Print the file path
-print(f"\nFile created at: {os.path.abspath('requirements.txt')}")
 
 # Function to convert audio format
 @st.cache_data
@@ -145,6 +111,10 @@ def initialize_vectorstore():
     pinecone_api_key = os.getenv('PINECONE_API_KEY')
     openai_api_key = os.getenv('OPENAI_API_KEY')
 
+    if not pinecone_api_key or not openai_api_key:
+        st.error("API keys not found. Please check your .env file.")
+        st.stop()
+
     embed = OpenAIEmbeddings(
         model='text-embedding-ada-002',
         openai_api_key=openai_api_key
@@ -152,15 +122,11 @@ def initialize_vectorstore():
 
     pc = pinecone.Pinecone(api_key=pinecone_api_key)
 
-    spec = pinecone.ServerlessSpec(
-        cloud="aws", region="us-east-1"
-    )
-
     index_name = 'langchain-retrieval-augmentation'
     existing_indexes = [index_info["name"] for index_info in pc.list_indexes()]
 
     if index_name not in existing_indexes:
-        pc.create_index(index_name, dimension=1536, metric='dotproduct', spec=spec)
+        pc.create_index(index_name, dimension=1536, metric='dotproduct')
         while not pc.describe_index(index_name).status['ready']:
             time.sleep(1)
 
