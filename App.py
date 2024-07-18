@@ -1,69 +1,46 @@
 import streamlit as st
+import yt_dlp
 
-st.title('Conversational Agent')
+# Initialize yt-dlp downloader
+def download_video(url):
+    ydl_opts = {
+        'format': 'bestaudio/best',  # Adjust format as needed
+        'noplaylist': True,  # Avoid downloading playlists
+        'outtmpl': 'video.%(ext)s',  # Output file template
+    }
 
-# Function to check if a package is installed
-def is_package_installed(package_name):
     try:
-        __import__(package_name)
-        return True
-    except ImportError:
-        return False
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        return 'video.mp4'  # Adjust output file name based on format
+    except Exception as e:
+        st.error(f"Error downloading video: {e}")
+        return None
 
-# List of required packages
-required_packages = ['yt_dlp', 'tqdm', 'vosk', 'dotenv', 'langchain', 'openai', 'pinecone']
+# Function to process video with sponsor handling
+def process_video(url):
+    st.write("Downloading video...")
+    video_file = download_video(url)
 
-# Check for missing packages
-missing_packages = [pkg for pkg in required_packages if not is_package_installed(pkg)]
+    if video_file:
+        st.write("Video downloaded successfully.")
+        
+        # Use yt-dlp to process sponsor sections or other enhancements
+        # Example code to handle sponsor sections with SponSkrub
+        
+        # Placeholder for further processing or transcription
+        st.write("Video processing completed.")
 
-if missing_packages:
-    st.error(f"The following required packages are not installed: {', '.join(missing_packages)}")
-    st.info("Please make sure these packages are listed in your requirements.txt file.")
-    st.info("If you're using Streamlit Cloud, check your deployment logs for any installation errors.")
-    st.stop()
+# Streamlit UI
+def main():
+    st.title('YouTube Video Transcription with yt-dlp')
+    video_url = st.text_input("Enter YouTube video URL:")
+    
+    if st.button("Process Video"):
+        if video_url:
+            process_video(video_url)
+        else:
+            st.warning("Please enter a valid YouTube video URL.")
 
-# If all packages are installed, we can safely import them
-import os
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-
-# Check for API keys
-pinecone_api_key = os.getenv('PINECONE_API_KEY')
-openai_api_key = os.getenv('OPENAI_API_KEY')
-
-if not pinecone_api_key or not openai_api_key:
-    st.error("API keys not found. Please check your .env file or Streamlit Cloud secrets.")
-    st.stop()
-
-st.success("All required packages are installed and API keys are found.")
-
-# Basic functionality demo
-option = st.selectbox(
-    'What would you like to do?',
-    ('Transcribe Video', 'Load Transcription', 'Query Agent')
-)
-
-if option == 'Transcribe Video':
-    st.write('You selected Transcribe Video')
-    video_url = st.text_input("Enter YouTube URL:")
-    if st.button("Transcribe"):
-        st.write(f"Transcribing video from: {video_url}")
-        # Add your transcription logic here
-
-elif option == 'Load Transcription':
-    st.write('You selected Load Transcription')
-    transcription = st.text_area("Enter transcription:")
-    if st.button("Load"):
-        st.write(f"Loading transcription: {transcription[:100]}...")
-        # Add your loading logic here
-
-elif option == 'Query Agent':
-    st.write('You selected Query Agent')
-    query = st.text_input("Enter your query:")
-    if st.button("Ask"):
-        st.write(f"Processing query: {query}")
-        # Add your query processing logic here
-
-st.write("App is running successfully!")
+if __name__ == '__main__':
+    main()
