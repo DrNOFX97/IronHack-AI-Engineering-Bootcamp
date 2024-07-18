@@ -7,18 +7,32 @@ import time
 import wave
 import sqlite3
 
-# Try to import required packages, if not installed, provide instructions
-try:
-    import yt_dlp
-    from tqdm.auto import tqdm
-    from vosk import Model, KaldiRecognizer
-    from dotenv import load_dotenv
-    from langchain.chains import RetrievalQA
-    from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-    import pinecone
-except ImportError as e:
-    st.error(f"Required package is not installed: {str(e)}. Please install it using: pip install {str(e).split()[-1]}")
+# Function to check if a package is installed
+def is_package_installed(package_name):
+    try:
+        __import__(package_name)
+        return True
+    except ImportError:
+        return False
+
+# Check for required packages
+required_packages = ['yt_dlp', 'tqdm', 'vosk', 'dotenv', 'langchain', 'openai', 'pinecone']
+missing_packages = [pkg for pkg in required_packages if not is_package_installed(pkg)]
+
+if missing_packages:
+    st.error(f"The following required packages are not installed: {', '.join(missing_packages)}")
+    st.info("Please add these packages to your requirements.txt file or install them manually.")
+    st.info("If you're using Streamlit Cloud, make sure these packages are listed in your requirements.txt file.")
     st.stop()
+
+# Now that we've checked, we can safely import the packages
+import yt_dlp
+from tqdm.auto import tqdm
+from vosk import Model, KaldiRecognizer
+from dotenv import load_dotenv
+from langchain.chains import RetrievalQA
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+import pinecone
 
 # Load environment variables
 load_dotenv()
