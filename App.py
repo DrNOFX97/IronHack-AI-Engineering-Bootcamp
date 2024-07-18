@@ -1,3 +1,41 @@
+import subprocess
+import sys
+import os
+
+def upgrade_pip():
+    """Upgrade pip to the latest version."""
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
+
+def install_packages(packages):
+    """Install a list of packages using pip."""
+    for package in packages:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+# Upgrade pip
+upgrade_pip()
+
+# List of packages to install
+packages = [
+    'streamlit',
+    'vosk',
+    'yt-dlp',
+    'tqdm',
+    'datasets',
+    'python-dotenv',
+    'openai',
+    'pinecone-client',
+    'tiktoken'
+]
+
+# Install the packages
+install_packages(packages)
+
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+
 import streamlit as st
 import yt_dlp
 
