@@ -1,41 +1,80 @@
 import streamlit as st
+import json
+import locale
 import os
 import platform
-import locale
-import requests
-import json
 import random
+import shutil
 import string
 from collections import OrderedDict
+from subprocess import PIPE, Popen
 from xml.etree import ElementTree as ET
-from subprocess import Popen, PIPE
+
+import requests
 from tqdm.auto import tqdm
 
+# Initialize session
 session = requests.sessions.Session()
 
+VERSION = 4
 VERSION_STR = '0.2.0'
+
 ADOBE_PRODUCTS_XML_URL = 'https://prod-rel-ffc-ccm.oobesaas.adobe.com/adobe-ffc-external/core/v{urlVersion}/products/all?_type=xml&channel=ccm&channel=sti&platform={installPlatform}&productType=Desktop'
 ADOBE_APPLICATION_JSON_URL = 'https://cdn-ffc.oobesaas.adobe.com/core/v3/applications'
+
+DRIVER_XML = '''<DriverInfo>
+    <ProductInfo>
+        <Name>Adobe {name}</Name>
+        <SAPCode>{sapCode}</SAPCode>
+        <CodexVersion>{version}</CodexVersion>
+        <Platform>{installPlatform}</Platform>
+        <EsdDirectory>./{sapCode}</EsdDirectory>
+        <Dependencies>
+{dependencies}
+        </Dependencies>
+    </ProductInfo>
+    <RequestInfo>
+        <InstallDir>/Applications</InstallDir>
+        <InstallLanguage>{language}</InstallLanguage>
+    </RequestInfo>
+</DriverInfo>
+'''
+
+DRIVER_XML_DEPENDENCY = '''         <Dependency>
+                <SAPCode>{sapCode}</SAPCode>
+                <BaseVersion>{version}</BaseVersion>
+                <EsdDirectory>./{sapCode}</EsdDirectory>
+            </Dependency>'''
+
 ADOBE_REQ_HEADERS = {
     'X-Adobe-App-Id': 'accc-apps-panel-desktop',
     'User-Agent': 'Adobe Application Manager 2.0',
     'X-Api-Key': 'CC_HD_ESD_1_0',
     'Cookie': 'fg=' + ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(26)) + '======'
 }
+
 ADOBE_DL_HEADERS = {
     'User-Agent': 'Creative Cloud'
 }
 
+# Helper functions
 def r(url, headers=ADOBE_REQ_HEADERS):
+    """Retrieve a from a url as a string."""
     req = session.get(url, headers=headers)
     req.encoding = 'utf-8'
     return req.text
 
 def get_products_xml(adobeurl):
+    """First stage of parsing the XML."""
+    st.write('Source URL is: ' + adobeurl)
     return ET.fromstring(r(adobeurl))
 
 def parse_products_xml(products_xml, urlVersion, allowedPlatforms):
-    prefix = 'channels/' if urlVersion == 6 else ''
+    """2nd stage of parsing the XML."""
+    if urlVersion == 6:
+        prefix = 'channels/'
+    else:
+        prefix = ''
     cdn = products_xml.find(prefix + 'channel/cdn/secure').text
     products = {}
     parent_map = {c: p for p in products_xml.iter() for c in p}
@@ -59,7 +98,7 @@ def parse_products_xml(products_xml, urlVersion, allowedPlatforms):
             dependencies = list(pf.findall('languageSet/dependencies/dependency'))
             if productVersion in products[sap]['versions']:
                 if products[sap]['versions'][productVersion]['apPlatform'] in allowedPlatforms:
-                    break
+                    break # There's no single-arch binary if macuniversal is available
 
             if sap == 'APRO':
                 baseVersion = productVersion
@@ -71,35 +110,40 @@ def parse_products_xml(products_xml, urlVersion, allowedPlatforms):
                             productVersion = b.find('nglLicensingInfo/appVersion').text
                             break
                 buildGuid = pf.find('languageSet/urls/manifestURL').text
+                # This is actually manifest URL
 
             products[sap]['versions'][productVersion] = {
                 'sapCode': sap,
                 'baseVersion': baseVersion,
                 'productVersion': productVersion,
                 'apPlatform': appplatform,
-                'dependencies': [{'sapCode': d.find('sapCode').text, 'version': d.find('baseVersion').text} for d in dependencies],
+                'dependencies': [{
+                    'sapCode': d.find('sapCode').text, 'version': d.find('baseVersion').text
+                } for d in dependencies],
                 'buildGuid': buildGuid
             }
     return products, cdn
 
-def get_application_json(buildGuid):
-    headers = ADOBE_REQ_HEADERS.copy()
-    headers['x-adobe-build-guid'] = buildGuid
-    return json.loads(r(ADOBE_APPLICATION_JSON_URL, headers))
-
 def download_file(url, product_dir, s, v, name=None):
+    """Download a file"""
     if not name:
         name = url.split('/')[-1].split('?')[0]
+    st.write('Url is: ' + url)
+    st.write('[{}_{}] Downloading {}'.format(s, v, name))
     file_path = os.path.join(product_dir, name)
     response = session.head(url, stream=True, headers=ADOBE_DL_HEADERS)
-    total_size_in_bytes = int(response.headers.get('content-length', 0))
+    total_size_in_bytes = int(
+        response.headers.get('content-length', 0))
     if os.path.isfile(file_path) and os.path.getsize(file_path) == total_size_in_bytes:
-        st.write(f'[{s}_{v}] {name} already exists, skipping')
+        st.write('[{}_{}] {} already exists, skipping'.format(s, v, name))
     else:
-        response = session.get(url, stream=True, headers=ADOBE_REQ_HEADERS)
-        total_size_in_bytes = int(response.headers.get('content-length', 0))
-        block_size = 1024
-        progress_bar = tqdm(total=total_size_in_bytes, unit='iB', unit_scale=True)
+        response = session.get(
+            url, stream=True, headers=ADOBE_REQ_HEADERS)
+        total_size_in_bytes = int(
+            response.headers.get('content-length', 0))
+        block_size = 1024  # 1 Kibibyte
+        progress_bar = tqdm(total=total_size_in_bytes,
+                            unit='iB', unit_scale=True)
         with open(file_path, 'wb') as file:
             for data in response.iter_content(block_size):
                 progress_bar.update(len(data))
@@ -108,58 +152,59 @@ def download_file(url, product_dir, s, v, name=None):
         if total_size_in_bytes != 0 and progress_bar.n != total_size_in_bytes:
             st.write("ERROR, something went wrong")
 
-def get_download_path():
-    dest = st.text_input("Enter download path:")
-    if not dest:
-        st.stop()
-    return dest
+# Streamlit UI
+st.title("Adobe Offline Package Downloader")
 
-def run_downloader():
-    st.title("Adobe Offline Package Downloader")
-    st.write(f"Version: {VERSION_STR}")
+# URL version input
+url_version = st.selectbox("Select URL version:", ["v4", "v5", "v6"], index=2)
 
-    products, cdn, sapCodes, allowedPlatforms = get_products()
+# Architecture input
+architecture = st.selectbox("Select architecture:", ["x86_64", "arm64"])
 
-    sapCode = st.selectbox("Select SAP Code:", options=[""] + list(sapCodes.keys()))
-    if not sapCode:
-        st.stop()
+# Get products button
+if st.button("Get Products"):
+    selectedVersion = None
+    if url_version.lower() == "v4" or url_version == "4":
+        selectedVersion = 4
+    elif url_version.lower() == "v5" or url_version == "5":
+        selectedVersion = 5
+    elif url_version.lower() == "v6" or url_version == "6":
+        selectedVersion = 6
+    else:
+        st.write('Invalid URL version selected.')
 
-    product = products.get(sapCode)
-    versions = product['versions']
-    version = st.selectbox("Select Version:", options=[""] + list(versions.keys()))
-    if not version:
-        st.stop()
+    ism1 = architecture.lower() in ['arm64', 'arm', 'm1']
+    allowedPlatforms = ['macuniversal']
+    if ism1:
+        allowedPlatforms.append('macarm64')
+        st.write('Note: If the Adobe program is NOT listed here, there is no native M1 version.')
+        st.write('Use the non-native version with Rosetta 2 until an M1 version is available.')
+    else:
+        allowedPlatforms.append('osx10-64')
+        allowedPlatforms.append('osx10')
 
-    installLanguage = st.selectbox("Select Install Language:", options=['en_US', 'en_GB', 'en_IL', 'en_AE', 'es_ES', 'es_MX', 'pt_BR', 'fr_FR', 'fr_CA', 'fr_MA', 'it_IT', 'de_DE', 'nl_NL', 'ru_RU', 'uk_UA', 'zh_TW', 'zh_CN', 'ja_JP', 'ko_KR', 'pl_PL', 'hu_HU', 'cs_CZ', 'tr_TR', 'sv_SE', 'nb_NO', 'fi_FI', 'da_DK', 'ALL'])
-    dest = get_download_path()
+    productsPlatform = 'osx10-64,osx10,macarm64,macuniversal'
+    adobeurl = ADOBE_PRODUCTS_XML_URL.format(urlVersion=selectedVersion, installPlatform=productsPlatform)
 
-    st.write(f"Selected SAP Code: {sapCode}")
-    st.write(f"Selected Version: {version}")
-    st.write(f"Selected Install Language: {installLanguage}")
-    st.write(f"Download Path: {dest}")
+    st.write('Downloading products.xml')
+    products_xml = get_products_xml(adobeurl)
 
-    if st.button("Start Download"):
-        prodInfo = versions[version]
-        prods_to_download = []
-        dependencies = prodInfo['dependencies']
-        for d in dependencies:
-            firstArch = firstGuid = buildGuid = None
-            for p in products[d['sapCode']]['versions']:
-                if products[d['sapCode']]['versions'][p]['baseVersion'] == d['version']:
-                    if not firstGuid:
-                        firstGuid = products[d['sapCode']]['versions'][p]['buildGuid']
-                        firstArch = products[d['sapCode']]['versions'][p]['apPlatform']
-                    if products[d['sapCode']]['versions'][p]['apPlatform'] in allowedPlatforms:
-                        buildGuid = products[d['sapCode']]['versions'][p]['buildGuid']
-                        break
-            if not buildGuid:
-                buildGuid = firstGuid
-            prods_to_download.append({'sapCode': d['sapCode'], 'buildGuid': buildGuid})
+    st.write('Parsing products.xml')
+    products, cdn = parse_products_xml(products_xml, selectedVersion, allowedPlatforms)
 
-        for prod in prods_to_download:
-            appInfo = get_application_json(prod['buildGuid'])
-            downloadURL = appInfo['packages'][0]['package_url']
-            download_file(downloadURL, dest, prod['sapCode'], version)
+    st.write('CDN: ' + cdn)
+    sapCodes = {}
+    for p in products.values():
+        if not p['hidden']:
+            versions = p['versions']
+            lastv = None
+            for v in reversed(versions.values()):
+                if v['buildGuid'] and v['apPlatform'] in allowedPlatforms:
+                    lastv = v['productVersion']
+            if lastv:
+                sapCodes[p['sapCode']] = p['displayName']
+    st.write(str(len(sapCodes)) + ' products found:')
+    for s, d in sapCodes.items():
+        st.write('[{}] {}'.format(s, d))
 
-if __name__ == "__main__":
-    run_downloader()
+# Further interaction for product selection, version, language, etc. can be added similarly
